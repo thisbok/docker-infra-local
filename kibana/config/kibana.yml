@@ -1,0 +1,17 @@
+---
+## Minimal Kibana configuration for ELK stack
+#
+server.name: kibana
+server.host: 0.0.0.0
+server.port: 5601
+
+# Elasticsearch connection
+elasticsearch.hosts: [ "http://elasticsearch:9200" ]
+elasticsearch.username: kibana_system
+elasticsearch.password: ${KIBANA_SYSTEM_PASSWORD}
+
+# 기본 암호화 키 (개발 환경용)
+xpack.encryptedSavedObjects.encryptionKey: "a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d"
+
+# 로깅 설정
+logging.root.level: info
