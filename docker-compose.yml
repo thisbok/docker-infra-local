@@ -65,6 +65,12 @@ services:
     networks:
       - elk
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 120s
 
   logstash:
     build:
@@ -73,14 +79,12 @@ services:
         ELASTIC_VERSION: ${ELASTIC_VERSION}
     volumes:
       - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro,Z
-      - ./logstash/config/zipkin-template.json:/usr/share/logstash/config/zipkin-template.json:ro,Z
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro,Z
     ports:
       - 5044:5044
       - 5045:5045
       - 50000:50000/tcp
       - 50000:50000/udp
-      - 9412:9412
       - 9600:9600
     environment:
       LS_JAVA_OPTS: -Xms256m -Xmx256m
@@ -145,24 +149,34 @@ services:
     networks:
       - elk
 
-  zipkin:
-    image: openzipkin/zipkin:${ZIPKIN_VERSION}
+  jaeger:
+    image: jaegertracing/all-in-one:${JAEGER_VERSION}
     restart: unless-stopped
     ports:
-      - 9411:9411
+      - 6831:6831/udp    # Jaeger Thrift compact
+      - 6832:6832/udp    # Jaeger Thrift binary
+      - 5778:5778        # Serve configs
+      - 16686:16686      # Jaeger UI
+      - 14250:14250      # gRPC
+      - 14268:14268      # HTTP collector
+      - 14269:14269      # Admin port
     environment:
-      - STORAGE_TYPE=elasticsearch
-      - ES_HOSTS=http://elasticsearch:9200
+      - SPAN_STORAGE_TYPE=elasticsearch
+      - ES_SERVER_URLS=http://elasticsearch:9200
       - ES_USERNAME=elastic
       - ES_PASSWORD=${ELASTIC_PASSWORD:-}
-      - ES_INDEX=zipkin
-      - ES_DATE_SEPARATOR=-
-      - ES_INDEX_SHARDS=5
-      - ES_INDEX_REPLICAS=0
+      - ES_INDEX_PREFIX=jaeger
+      - ES_TLS_ENABLED=false
     networks:
       - elk
     depends_on:
       - elasticsearch
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   zookeeper:
     image: confluentinc/cp-zookeeper:${KAFKA_VERSION}

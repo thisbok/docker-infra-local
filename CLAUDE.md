@@ -47,11 +47,11 @@ docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --use
 
 ### Services and Ports
 - **Elasticsearch**: 9200 (HTTP), 9300 (TCP transport)
-- **Logstash**: 5044 (Beats input), 5045 (Zipkin Beats), 50000 (TCP input), 9412 (Zipkin HTTP), 9600 (monitoring API)
+- **Logstash**: 5044 (Beats input), 50000 (TCP input), 9600 (monitoring API)
 - **Kibana**: 5601 (Web UI)
 - **Redis**: 6379
 - **MySQL**: 3306
-- **Zipkin**: 9411 (Web UI & API)
+- **Jaeger**: 16686 (Web UI), 14268 (HTTP collector), 14250 (gRPC), 6831/6832 (UDP), 5778 (configs)
 - **Zookeeper**: 2181 (Kafka coordination)
 - **Kafka**: 9092 (external), 29092 (internal), 9094 (JMX)
 - **Kafka UI**: 8080 (Web UI)
@@ -62,11 +62,10 @@ docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --use
 - **Logstash**:
   - Pulls data from Redis using the `transactions` key
   - Consumes data from Kafka topics
-  - Receives Zipkin traces via HTTP and Beats
   - Processes and filters all data streams
 - **Elasticsearch**: Central data store for all processed data
 - **Kibana**: Visualization and analytics interface
-- **Zipkin**: Distributed tracing visualization
+- **Jaeger**: Distributed tracing visualization and analysis
 
 ### Key Configuration Files
 - **Environment variables**: `.env` - Contains passwords and version settings
@@ -96,7 +95,7 @@ The `extensions/` directory contains optional integrations:
 
 ## Version Management
 - Stack version controlled via `ELASTIC_VERSION` in `.env` file
-- Current version: 8.10.4
+- Current version: 8.11.1
 - Rebuild required when changing versions: `docker-compose build`
 
 ### MySQL Integration
@@ -117,55 +116,45 @@ docker-compose logs mysql
 docker-compose down -v && docker volume rm docker-elk-redis_mysql
 ```
 
-### Zipkin Integration
-- **Distributed Tracing**: Zipkin UI available at http://localhost:9411
-- **Storage**: Uses Elasticsearch as backend storage with optimized template
-- **Data Input**: Accepts traces via HTTP (port 9412) and Beats (port 5045)
-- **Index Pattern**: Trace data stored in daily indices `zipkin-traces-YYYY.MM.dd`
-- **Template**: Custom Elasticsearch template for efficient trace data storage
-- **Data Processing**: Logstash filters for timestamp conversion and field normalization
+### Jaeger Integration
+- **Distributed Tracing**: Jaeger UI available at http://localhost:16686
+- **Storage**: Uses Elasticsearch as backend storage
+- **Data Input**: Accepts traces via HTTP (port 14268), gRPC (port 14250), UDP (ports 6831/6832)
+- **Index Pattern**: Trace data stored with `jaeger` prefix
+- **Compatibility**: Supports OpenTelemetry and native Jaeger protocols
 
-### Zipkin Management
+### Jaeger Management
 ```bash
-# View Zipkin logs
-docker-compose logs zipkin
+# View Jaeger logs
+docker-compose logs jaeger
 
-# Access Zipkin UI
-open http://localhost:9411
+# Access Jaeger UI
+open http://localhost:16686
 
-# Send trace data via HTTP (올바른 형식)
-curl -X POST http://localhost:9411/api/v2/spans \
+# Send trace data via HTTP
+curl -X POST http://localhost:14268/api/traces \
   -H "Content-Type: application/json" \
-  -d '[{
-    "traceId": "1234567890abcdef",
-    "id": "abcdef1234567890",
-    "name": "test-operation",
-    "timestamp": '$(date +%s)000000',
-    "duration": 50000,
-    "localEndpoint": {
-      "serviceName": "my-service",
-      "ipv4": "127.0.0.1",
-      "port": 8080
-    },
-    "tags": {
-      "http.method": "GET",
-      "http.url": "/api/test"
-    }
-  }]'
-
-# Logstash 를 통한 전송 (포트 9412)
-curl -X POST http://localhost:9412/spans \
-  -H "Content-Type: application/json" \
-  -d '[{
-    "traceId": "fedcba0987654321",
-    "id": "0987654321fedcba",
-    "name": "database-query",
-    "timestamp": '$(date +%s)000000',
-    "duration": 25000,
-    "localEndpoint": {
-      "serviceName": "database-service"
-    }
-  }]'
+  -d '{
+    "data": [{
+      "traceID": "1234567890abcdef",
+      "spans": [{
+        "traceID": "1234567890abcdef",
+        "spanID": "abcdef1234567890",
+        "operationName": "test-operation",
+        "startTime": '$(date +%s%N | cut -b1-16)',
+        "duration": 50000,
+        "tags": [{
+          "key": "http.method",
+          "type": "string",
+          "value": "GET"
+        }],
+        "process": {
+          "serviceName": "my-service",
+          "tags": []
+        }
+      }]
+    }]
+  }'
 ```
 
 ### Kafka Integration
